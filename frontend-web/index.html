@@ -1,0 +1,1297 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PPT RAG · 文档检索与问答</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    /* ============ Design Tokens ============ */
+    :root {
+      /* Color · Light */
+      --bg:           #ffffff;
+      --bg-elev:      #fafafa;
+      --bg-soft:      #f5f5f7;
+      --surface:      #ffffff;
+      --border:       #e5e5e7;
+      --border-soft:  #ececef;
+      --fg:           #1d1d1f;
+      --fg-muted:     #6e6e73;
+      --fg-subtle:    #86868b;
+      --accent:       #0071e3;
+      --accent-soft:  #e8f1fc;
+      --success:      #2e8540;
+      --warning:      #b25000;
+      --danger:       #c8102e;
+
+      /* Radius */
+      --r-sm: 6px;
+      --r-md: 10px;
+      --r-lg: 14px;
+      --r-xl: 20px;
+
+      /* Shadow */
+      --shadow-1: 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-2: 0 4px 16px rgba(0,0,0,0.06);
+      --shadow-3: 0 12px 32px rgba(0,0,0,0.08);
+
+      /* Typography (size / line-height) */
+      --t-32: 32px; --lh-32: 40px;
+      --t-24: 24px; --lh-24: 32px;
+      --t-20: 20px; --lh-20: 28px;
+      --t-16: 16px; --lh-16: 24px;
+      --t-14: 14px; --lh-14: 20px;
+      --t-12: 12px; --lh-12: 16px;
+    }
+    html.dark {
+      --bg:          #000000;
+      --bg-elev:     #0a0a0a;
+      --bg-soft:     #141416;
+      --surface:     #1c1c1e;
+      --border:      #2c2c2e;
+      --border-soft: #232326;
+      --fg:          #f5f5f7;
+      --fg-muted:    #a1a1a6;
+      --fg-subtle:   #6e6e73;
+      --accent:      #2997ff;
+      --accent-soft: #14304d;
+      --success:     #4caf50;
+      --warning:     #ffb454;
+      --danger:      #ff453a;
+
+      --shadow-1: 0 1px 2px rgba(0,0,0,0.5);
+      --shadow-2: 0 4px 16px rgba(0,0,0,0.4);
+      --shadow-3: 0 12px 32px rgba(0,0,0,0.5);
+    }
+
+    html, body, #root { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      font-feature-settings: 'cv11', 'ss01';
+      overflow: hidden;
+    }
+
+    /* ============ Background FX (infinite-grid theme) ============ */
+    .bg-fx {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+      --mx: 50vw; --my: 30vh;
+    }
+    .bg-fx .grid-base,
+    .bg-fx .grid-spot {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+      background-size: 40px 40px;
+      animation: gridScroll 6s linear infinite;
+      color: var(--fg-subtle);
+    }
+    .bg-fx .grid-base { opacity: 0.05; }
+    .bg-fx .grid-spot {
+      opacity: 0.40;
+      -webkit-mask-image: radial-gradient(320px circle at var(--mx) var(--my), #000 0%, transparent 70%);
+              mask-image: radial-gradient(320px circle at var(--mx) var(--my), #000 0%, transparent 70%);
+    }
+    @keyframes gridScroll {
+      from { background-position: 0 0, 0 0; }
+      to   { background-position: 40px 40px, 40px 40px; }
+    }
+    /* color tokens for grid line */
+    :root      { --grid-line: rgba(60, 60, 67, 0.35); }
+    html.dark  { --grid-line: rgba(235, 235, 245, 0.18); }
+
+    /* blurred orbs */
+    .bg-fx .orb {
+      position: absolute; border-radius: 9999px;
+      filter: blur(120px); opacity: .55;
+      will-change: transform;
+    }
+    html.dark .bg-fx .orb { opacity: .30; }
+    .bg-fx .orb-1 {
+      right: -18%; top: -20%; width: 46%; height: 46%;
+      background: #ff7a3d; /* orange */
+      animation: orbDrift1 22s ease-in-out infinite alternate;
+    }
+    .bg-fx .orb-2 {
+      right: 8%; top: -10%; width: 22%; height: 22%;
+      background: var(--accent);
+      animation: orbDrift2 18s ease-in-out infinite alternate;
+    }
+    .bg-fx .orb-3 {
+      left: -12%; bottom: -22%; width: 46%; height: 46%;
+      background: #4f8dff; /* blue */
+      animation: orbDrift3 26s ease-in-out infinite alternate;
+    }
+    @keyframes orbDrift1 { from { transform: translate(0,0) } to { transform: translate(-3%, 4%) } }
+    @keyframes orbDrift2 { from { transform: translate(0,0) } to { transform: translate(4%, 3%) } }
+    @keyframes orbDrift3 { from { transform: translate(0,0) } to { transform: translate(3%, -3%) } }
+
+    /* App container above FX */
+    #root > .app-shell { position: relative; z-index: 1; }
+
+    /* ============ Sidebar (hover-expand, shadcn-inspired) ============ */
+    :root {
+      --sidebar-w:           272px;   /* expanded  */
+      --sidebar-w-icon:      72px;    /* collapsed */
+      --sidebar-anim:        260ms cubic-bezier(.22, 1, .36, 1);
+    }
+    .sidebar-rail {
+      position: relative;
+      height: 100%;
+      width: var(--sidebar-w-icon);
+      flex-shrink: 0;
+      transition: width var(--sidebar-anim);
+    }
+    .sidebar-rail[data-state="expanded"] { width: var(--sidebar-w); }
+
+    .sidebar-panel {
+      position: absolute; inset: 0 auto 0 0;
+      width: var(--sidebar-w-icon);
+      transition: width var(--sidebar-anim), box-shadow var(--sidebar-anim);
+      overflow: hidden;
+      border-right: 1px solid var(--border-soft);
+    }
+    .sidebar-rail[data-state="expanded"] .sidebar-panel {
+      width: var(--sidebar-w);
+      box-shadow: var(--shadow-2);
+      z-index: 30;
+    }
+    /* hide labels when collapsed */
+    .sidebar-rail[data-state="collapsed"] .s-label { opacity: 0; pointer-events: none; }
+    .sidebar-rail[data-state="collapsed"] .s-hide-collapsed { display: none !important; }
+    .sidebar-rail[data-state="collapsed"] .s-only-collapsed  { display: flex !important; }
+    .sidebar-rail[data-state="expanded"]  .s-only-collapsed  { display: none !important; }
+    .s-only-collapsed { display: none; }
+    .s-label { transition: opacity .12s ease; white-space: nowrap; }
+
+    /* collapsed alignment helpers */
+    .sidebar-rail[data-state="collapsed"] .s-row { justify-content: center; padding-left: 0; padding-right: 0; }
+
+    /* upload CTA — dashed ring + upload arrow (方案 A) */
+    .upload-cta {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      background: transparent;
+      color: var(--fg-muted);
+      border: 1.5px dashed var(--border);
+      border-radius: var(--r-md);
+      cursor: pointer; user-select: none; white-space: nowrap;
+      transition: border-color .2s ease, color .2s ease, background .2s ease, transform .12s ease;
+      position: relative;
+    }
+    .upload-cta:hover {
+      border-color: var(--fg-subtle);
+      color: var(--fg);
+      background: color-mix(in oklab, var(--fg) 3%, transparent);
+    }
+    .upload-cta:active { transform: scale(.98); }
+
+    /* collapsed: circle */
+    .sidebar-rail[data-state="collapsed"] .upload-cta {
+      width: 48px; height: 48px; margin: 0 auto; gap: 0;
+      border-radius: 999px;
+    }
+    .sidebar-rail[data-state="collapsed"] .upload-cta .cta-text { display: none; }
+    .sidebar-rail[data-state="collapsed"] .upload-cta .cta-icon svg { width: 20px; height: 20px; }
+
+    /* expanded: full-width pill */
+    .sidebar-rail[data-state="expanded"] .upload-cta {
+      width: 100%; height: 42px; padding: 0 14px;
+      border-radius: var(--r-md);
+      justify-content: flex-start;
+    }
+    .sidebar-rail[data-state="expanded"] .cta-text { font-size: 14px; line-height: 1; font-weight: 500; }
+    .upload-cta .cta-icon { display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .upload-cta .cta-icon svg { width: 18px; height: 18px; }
+
+    /* pulse: dashed ring glows when no docs */
+    .upload-cta.pulse {
+      border-color: var(--fg-subtle);
+      animation: dashPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes dashPulse {
+      0%,100% { border-color: var(--border); }
+      50%     { border-color: var(--fg-subtle); }
+    }
+
+    /* nav item */
+    .nav-item {
+      display: flex; align-items: center; gap: 12px;
+      height: 40px; padding: 0 12px; border-radius: var(--r-sm);
+      color: var(--fg); transition: background-color .12s ease, color .12s ease;
+      cursor: pointer; white-space: nowrap; overflow: hidden;
+    }
+    .nav-item:hover { background: var(--bg-soft); }
+    .nav-item.active { background: var(--accent-soft); color: var(--accent); }
+    .nav-item .icon { flex-shrink: 0; width: 20px; height: 20px; display:flex; align-items:center; justify-content:center; }
+    /* collapsed: center icons in the rail */
+    .sidebar-rail[data-state="collapsed"] .nav-item {
+      width: 40px; padding: 0; justify-content: center; margin-left: auto; margin-right: auto;
+    }
+
+    /* a small grabber hint on the collapsed edge */
+    .sidebar-edge {
+      position: absolute; top: 50%; right: -3px; transform: translateY(-50%);
+      width: 3px; height: 36px; border-radius: 999px;
+      background: var(--border); opacity: 0; transition: opacity .15s ease;
+    }
+    .sidebar-rail:hover .sidebar-edge { opacity: 1; }
+
+    /* Surfaces with translucency to let the FX peek through subtly */
+    .surface-blur {
+      background: color-mix(in oklab, var(--surface) 78%, transparent);
+      backdrop-filter: saturate(140%) blur(14px);
+      -webkit-backdrop-filter: saturate(140%) blur(14px);
+    }
+    .surface-strong {
+      background: color-mix(in oklab, var(--surface) 75%, transparent);
+      backdrop-filter: saturate(180%) blur(24px);
+      -webkit-backdrop-filter: saturate(180%) blur(24px);
+    }
+    /* type scale utility */
+    .t-32 { font-size: var(--t-32); line-height: var(--lh-32); letter-spacing: -0.02em; font-weight: 600; }
+    .t-24 { font-size: var(--t-24); line-height: var(--lh-24); letter-spacing: -0.01em; font-weight: 600; }
+    .t-20 { font-size: var(--t-20); line-height: var(--lh-20); letter-spacing: -0.005em; font-weight: 600; }
+    .t-16 { font-size: var(--t-16); line-height: var(--lh-16); }
+    .t-14 { font-size: var(--t-14); line-height: var(--lh-14); }
+    .t-12 { font-size: var(--t-12); line-height: var(--lh-12); }
+
+    /* color utils referencing tokens */
+    .bg-app       { background: var(--bg); }
+    .bg-elev      { background: var(--bg-elev); }
+    .bg-soft      { background: var(--bg-soft); }
+    .bg-surface   { background: var(--surface); }
+    .bg-accent    { background: var(--accent); }
+    .bg-accent-soft { background: var(--accent-soft); }
+    .text-fg       { color: var(--fg); }
+    .text-muted    { color: var(--fg-muted); }
+    .text-subtle   { color: var(--fg-subtle); }
+    .text-accent   { color: var(--accent); }
+    .text-success  { color: var(--success); }
+    .text-warning  { color: var(--warning); }
+    .text-danger   { color: var(--danger); }
+    .border-app       { border-color: var(--border); }
+    .border-soft      { border-color: var(--border-soft); }
+    .ring-accent      { --tw-ring-color: var(--accent); }
+
+    /* radii */
+    .r-sm { border-radius: var(--r-sm); }
+    .r-md { border-radius: var(--r-md); }
+    .r-lg { border-radius: var(--r-lg); }
+    .r-xl { border-radius: var(--r-xl); }
+
+    /* shadows */
+    .sh-1 { box-shadow: var(--shadow-1); }
+    .sh-2 { box-shadow: var(--shadow-2); }
+    .sh-3 { box-shadow: var(--shadow-3); }
+
+    /* Cards & motion */
+    .card {
+      background: color-mix(in oklab, var(--surface) 82%, transparent);
+      backdrop-filter: saturate(140%) blur(10px);
+      -webkit-backdrop-filter: saturate(140%) blur(10px);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--r-md);
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .card:hover { border-color: var(--border); box-shadow: var(--shadow-1); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      height: 32px; padding: 0 12px; border-radius: var(--r-sm);
+      font-size: var(--t-14); line-height: var(--lh-14); font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--surface); color: var(--fg);
+      transition: all .15s ease;
+    }
+    .btn:hover { border-color: var(--fg-subtle); }
+    .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); }
+    .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-primary:hover { filter: brightness(1.05); border-color: var(--accent); }
+    .btn-ghost { background: transparent; border-color: transparent; }
+    .btn-ghost:hover { background: var(--bg-soft); }
+    .btn-danger:hover { color: var(--danger); border-color: var(--danger); }
+
+    .input, .select, .textarea {
+      width: 100%; background: var(--surface); color: var(--fg);
+      border: 1px solid var(--border); border-radius: var(--r-sm);
+      padding: 8px 12px; font-size: var(--t-14); line-height: var(--lh-14);
+      transition: border-color .15s ease, box-shadow .15s ease;
+      cursor: inherit;
+    }
+    .select { cursor: pointer; }
+    .input:focus, .select:focus, .textarea:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      height: 20px; padding: 0 8px; border-radius: 999px;
+      font-size: var(--t-12); line-height: 1; font-weight: 500;
+      background: var(--bg-soft); color: var(--fg-muted);
+      border: 1px solid var(--border-soft);
+    }
+    .chip-success { color: var(--success); border-color: rgba(46,133,64,.25); background: rgba(46,133,64,.08); }
+    .chip-warning { color: var(--warning); border-color: rgba(178,80,0,.25);  background: rgba(178,80,0,.08); }
+    .chip-danger  { color: var(--danger);  border-color: rgba(200,16,46,.25); background: rgba(200,16,46,.08); }
+    .chip-info    { color: var(--accent);  border-color: rgba(0,113,227,.25); background: var(--accent-soft); }
+
+    .dot { width: 6px; height: 6px; border-radius: 999px; display: inline-block; }
+
+    /* ============ Composer glow (C) ============ */
+    .composer-card {
+      box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--accent) 8%, transparent),
+        0 8px 32px -8px color-mix(in oklab, var(--accent) 15%, transparent),
+        0 2px 8px rgba(0,0,0,0.04);
+      transition: box-shadow .4s ease;
+    }
+    .composer-card:focus-within {
+      box-shadow:
+        0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent),
+        0 8px 40px -6px color-mix(in oklab, var(--accent) 25%, transparent),
+        0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    /* send button — plain icon, no pulse */
+
+    /* ============ Q&A group spacing (F) ============ */
+    .qa-group + .qa-group { margin-top: 32px; }
+    .theme-btn {
+      background: none; border: none; cursor: pointer; padding: 6px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px; outline: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .theme-btn:hover { background: var(--bg-soft); }
+    .theme-svg { overflow: visible; transition: transform .55s cubic-bezier(.34, 1.56, .64, 1); }
+    .theme-svg.dark { transform: rotate(270deg); }
+    .theme-core   { r: 5;  transition: r .55s cubic-bezier(.34, 1.56, .64, 1); }
+    .theme-svg.dark .theme-core { r: 9; }
+    .theme-mask-c { cx: 33; cy: 0; transition: cx .55s cubic-bezier(.34, 1.56, .64, 1), cy .55s cubic-bezier(.34, 1.56, .64, 1); }
+    .theme-svg.dark .theme-mask-c { cx: 17; cy: 8; }
+    .theme-rays {
+      opacity: 1; transform: scale(1);
+      transition: opacity .45s cubic-bezier(.34, 1.56, .64, 1), transform .45s cubic-bezier(.34, 1.56, .64, 1);
+      transform-origin: 12px 12px;
+    }
+    .theme-svg.dark .theme-rays { opacity: 0; transform: scale(.5); }
+    .theme-click-ripple {
+      position: absolute; inset: 0; border-radius: inherit;
+      background: color-mix(in oklab, var(--fg) 12%, transparent);
+      animation: rippleOut .45s ease-out forwards;
+      pointer-events: none;
+    }
+    @keyframes rippleOut { from { transform: scale(.6); opacity: 1; } to { transform: scale(2.4); opacity: 0; } }
+
+    /* scrollbars */
+    .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+    .scroll-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+    .scroll-thin::-webkit-scrollbar-thumb:hover { background: var(--fg-subtle); }
+
+    /* fade-in */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .fade-up { animation: fadeUp .25s ease both; }
+
+    /* typing indicator */
+    @keyframes blink { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+    .typing span { display:inline-block; width:6px; height:6px; margin-right:4px;
+                   border-radius:999px; background: var(--fg-subtle); animation: blink 1.4s infinite both; }
+    .typing span:nth-child(2){ animation-delay:.2s }
+    .typing span:nth-child(3){ animation-delay:.4s }
+
+    /* line-clamp */
+    .clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .clamp-3 { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+
+    /* ================== PopSelect (custom dropdown) ================== */
+    .ps-trigger {
+      display: inline-flex; align-items: center; gap: 4px;
+      height: 32px; padding: 0 12px;
+      font-size: var(--t-14); line-height: 1; font-weight: 500;
+      color: var(--fg-muted);
+      background: color-mix(in oklab, var(--surface) 60%, transparent);
+      backdrop-filter: saturate(140%) blur(6px);
+      -webkit-backdrop-filter: saturate(140%) blur(6px);
+      border: 1px solid var(--border-soft);
+      border-radius: 999px;
+      cursor: pointer; user-select: none;
+      transition: border-color .15s ease, color .15s ease, background .15s ease;
+    }
+    .ps-trigger:hover { border-color: var(--border); color: var(--fg); background: color-mix(in oklab, var(--surface) 80%, transparent); }
+    .ps-trigger.open { border-color: var(--accent); color: var(--fg); }
+    .ps-trigger .chevron {
+      transition: transform .2s ease; opacity: .5; margin-left: 2px;
+    }
+    .ps-trigger.open .chevron { transform: rotate(180deg); opacity: 1; }
+
+    .ps-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%;
+      background: color-mix(in oklab, var(--surface) 92%, transparent);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      box-shadow: var(--shadow-3);
+      padding: 4px;
+      z-index: 50;
+      animation: psIn .18s ease both;
+      transform-origin: top left;
+    }
+    @keyframes psIn {
+      from { opacity: 0; transform: translateY(-4px) scale(.97); }
+      to   { opacity: 1; transform: translateY(0)    scale(1); }
+    }
+    .ps-item {
+      display: flex; align-items: center; gap: 8px;
+      height: 36px; padding: 0 12px;
+      font-size: var(--t-14); line-height: 1; font-weight: 500;
+      color: var(--fg);
+      border-radius: var(--r-sm);
+      cursor: pointer; white-space: nowrap;
+      transition: background-color .1s ease;
+    }
+    .ps-item:hover { background: var(--bg-soft); }
+    .ps-item.selected { color: var(--accent); background: var(--accent-soft); }
+    .ps-item .dot-check { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); flex-shrink: 0; opacity: 0; transition: opacity .15s ease; }
+    .ps-item.selected .dot-check { opacity: 1; }
+  </style>
+</head>
+<body class="bg-app text-fg">
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+    /* ================== API ================== */
+    const API = (typeof window !== 'undefined' && window.__API__) || 'http://127.0.0.1:8000';
+
+    async function api(path, opts = {}) {
+      const r = await fetch(`${API}${path}`, opts);
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const ct = r.headers.get('content-type') || '';
+      return ct.includes('application/json') ? r.json() : r.text();
+    }
+    const listDocs   = ()        => api('/docs');
+    const docStatus  = (id)      => api(`/docs/${id}/status`);
+    const deleteDoc  = (id)      => api(`/docs/${id}`, { method: 'DELETE' });
+    const uploadDoc  = (file)    => {
+      const fd = new FormData(); fd.append('file', file);
+      return api('/ingest', { method: 'POST', body: fd });
+    };
+    const queryAsk   = (payload) => api('/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const thumbUrl   = (docId, page) => `${API}/docs/${docId}/pages/${page}/thumb`;
+
+    /* ================== Icons (inline svg) ================== */
+    const Icon = ({ d, size=16, className='' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+           className={className} aria-hidden="true">{d}</svg>
+    );
+    const I = {
+      upload: <Icon d={<><path d="M12 16V4"/><path d="M5 11l7-7 7 7"/><path d="M5 20h14"/></>} />,
+      send:   <Icon d={<><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></>} />,
+      arrowUp:<Icon d={<><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></>} />,
+      uploadTray: <Icon d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>} />,
+      trash:  <Icon d={<><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></>} />,
+      doc:    <Icon d={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></>} />,
+      moon:   <Icon d={<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>} />,
+      sun:    <Icon d={<><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></>} />,
+      search: <Icon d={<><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></>} />,
+      sparkle:<Icon d={<><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></>} />,
+      clock:  <Icon d={<><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>} />,
+      check:  <Icon d={<path d="M20 6L9 17l-5-5"/>} />,
+      refresh:<Icon d={<><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></>} />,
+      close:  <Icon d={<><path d="M18 6L6 18"/><path d="M6 6l12 12"/></>} />,
+      menu:   <Icon d={<><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></>} />,
+      panelL: <Icon d={<><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></>} />,
+      library:<Icon d={<><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 2h6v4H9z"/></>} />,
+      plus:   <Icon d={<><path d="M12 5v14"/><path d="M5 12h14"/></>} />,
+    };
+
+    /* AI Logo with inner shadow (mimics shadcn card icon) - DARKER GRAY */
+    const AILogo = ({ size = 64 }) => (
+      <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="innerShadow" colorInterpolationFilters="sRGB" filterUnits="userSpaceOnUse" x="0" y="-3" width="48" height="54">
+            <feFlood floodOpacity="0" result="bg" />
+            <feBlend in="SourceGraphic" in2="bg" mode="normal" result="shape" />
+            <feColorMatrix in="SourceAlpha" result="hardAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" />
+            <feOffset dy="-3" />
+            <feGaussianBlur stdDeviation="1.5" />
+            <feComposite in2="hardAlpha" k2="-1" k3="1" operator="arithmetic" />
+            <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.1 0" />
+            <feBlend in2="shape" mode="normal" result="inner1" />
+            <feColorMatrix in="SourceAlpha" result="hardAlpha2" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" />
+            <feOffset dy="3" />
+            <feGaussianBlur stdDeviation="1.5" />
+            <feComposite in2="hardAlpha2" k2="-1" k3="1" operator="arithmetic" />
+            <feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.1 0" />
+            <feBlend in2="inner1" mode="normal" result="inner2" />
+          </filter>
+          <linearGradient id="gradGray" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style={{stopColor: '#9ca3af', stopOpacity: 1}} />
+            <stop offset="100%" style={{stopColor: '#6b7280', stopOpacity: 1}} />
+          </linearGradient>
+        </defs>
+        <circle cx="24" cy="24" r="20" fill="url(#gradGray)" filter="url(#innerShadow)" />
+        <path d="M20 18l-2 12h4l-2-12zm8 0l-2 12h4l-2-12z" fill="#fff" opacity="0.9" />
+        <circle cx="24" cy="16" r="2" fill="#fff" opacity="0.9" />
+      </svg>
+    );
+
+    /* ================== Status Chip ================== */
+    const STATUS_LABEL = {
+      pending:  { text: '排队中', cls: 'chip', dot: 'var(--fg-subtle)' },
+      parsing:  { text: '解析中', cls: 'chip chip-warning', dot: 'var(--warning)' },
+      indexed:  { text: '已就绪', cls: 'chip chip-success', dot: 'var(--success)' },
+      failed:   { text: '失败',   cls: 'chip chip-danger',  dot: 'var(--danger)'  },
+    };
+    const StatusChip = ({ status }) => {
+      const s = STATUS_LABEL[status] || STATUS_LABEL.pending;
+      return (
+        <span className={s.cls}>
+          <span className="dot" style={{background: s.dot}} />
+          {s.text}
+        </span>
+      );
+    };
+
+    /* ================== Theme ================== */
+
+    /* ── Web Audio click sound for theme toggle ── */
+    let _audioCtx = null;
+    let _audioBuf = null;
+    function themeAudioCtx() {
+      if (!_audioCtx) {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (_audioCtx.state === 'suspended') _audioCtx.resume();
+      return _audioCtx;
+    }
+    function themeAudioBuf(ac) {
+      if (_audioBuf && _audioBuf.sampleRate === ac.sampleRate) return _audioBuf;
+      const rate = ac.sampleRate;
+      const len = Math.floor(rate * 0.006);
+      const buf = ac.createBuffer(1, len, rate);
+      const ch = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        const t = i / len;
+        ch[i] = (Math.sin(2 * Math.PI * 3400 * t) * 0.6 + (Math.random() * 2 - 1) * 0.4) * (1 - t) ** 3;
+      }
+      _audioBuf = buf;
+      return buf;
+    }
+    let _lastClick = 0;
+    function playThemeClick() {
+      const now = performance.now();
+      if (now - _lastClick < 80) return;
+      _lastClick = now;
+      try {
+        const ac = themeAudioCtx();
+        const buf = themeAudioBuf(ac);
+        const src = ac.createBufferSource();
+        const gain = ac.createGain();
+        src.buffer = buf;
+        gain.gain.value = 0.06;
+        src.connect(gain);
+        gain.connect(ac.destination);
+        src.start();
+      } catch { /* silent */ }
+    }
+
+    /* ── Animated Theme Toggler (motion-free, CSS transitions + spring easing) ── */
+    function AnimatedThemeToggler({ isDark, onToggle }) {
+      const [ripple, setRipple] = useState(false);
+
+      const toggle = () => {
+        playThemeClick();
+        setRipple(true);
+        setTimeout(() => setRipple(false), 450);
+        onToggle();
+      };
+
+      return (
+        <button
+          className="theme-btn"
+          onClick={toggle}
+          aria-label={isDark ? '切换为浅色' : '切换为深色'}
+          style={{ color: 'var(--fg)', position: 'relative' }}
+        >
+          {ripple && <span className="theme-click-ripple" />}
+          <svg
+            className={'theme-svg' + (isDark ? ' dark' : '')}
+            width="20" height="20" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+          >
+            <mask id="themeMask">
+              <rect x="0" y="0" width="100%" height="100%" fill="white" />
+              <circle className="theme-mask-c" r="9" fill="black" />
+            </mask>
+            <circle className="theme-core" cx="12" cy="12" fill="currentColor" stroke="none" mask="url(#themeMask)" />
+            <g className="theme-rays">
+              {[0, 45, 90, 135, 180, 225, 270, 315].map(a => (
+                <line key={a} x1="12" y1="2.5" x2="12" y2="4.5"
+                      stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                      transform={`rotate(${a} 12 12)`} />
+              ))}
+            </g>
+          </svg>
+        </button>
+      );
+    }
+    function useTheme() {
+      const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+      useEffect(() => {
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+        localStorage.setItem('theme', theme);
+      }, [theme]);
+      return [theme, () => setTheme(t => t === 'dark' ? 'light' : 'dark')];
+    }
+
+    /* ================== Document Panel (hover-expand sidebar) ================== */
+    function DocPanel({ docs, refresh, onUploadingChange }) {
+      const fileRef = useRef(null);
+      const [uploading, setUploading] = useState([]);
+      const [filter, setFilter] = useState('');
+      const [pinned, setPinned] = useState(false);
+      const [hovered, setHovered] = useState(false);
+      const hoverTimer = useRef(null);
+
+      const expanded = pinned || hovered;
+
+      const onEnter = () => {
+        clearTimeout(hoverTimer.current);
+        hoverTimer.current = setTimeout(() => setHovered(true), 80);
+      };
+      const onLeave = () => {
+        clearTimeout(hoverTimer.current);
+        hoverTimer.current = setTimeout(() => setHovered(false), 160);
+      };
+      useEffect(() => () => clearTimeout(hoverTimer.current), []);
+
+      const pickFiles = () => fileRef.current?.click();
+
+      const onFiles = async (e) => {
+        const files = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (!files.length) return;
+        const initial = files.map(f => ({ name: f.name, status: 'uploading', err: null }));
+        setUploading(initial);
+        onUploadingChange?.(true);
+        for (let i = 0; i < files.length; i++) {
+          try {
+            await uploadDoc(files[i]);
+            setUploading(u => u.map((x, idx) => idx === i ? { ...x, status: 'queued' } : x));
+          } catch (err) {
+            setUploading(u => u.map((x, idx) => idx === i ? { ...x, status: 'failed', err: String(err.message) } : x));
+          }
+        }
+        await refresh();
+        setTimeout(() => { setUploading([]); onUploadingChange?.(false); }, 1500);
+      };
+
+      const onDelete = async (id) => {
+        if (!confirm('确认删除该文档？此操作不可撤销。')) return;
+        try { await deleteDoc(id); await refresh(); }
+        catch (e) { alert('删除失败: ' + e.message); }
+      };
+
+      const filtered = useMemo(() => {
+        const k = filter.trim().toLowerCase();
+        if (!k) return docs;
+        return docs.filter(d => (d.filename || '').toLowerCase().includes(k));
+      }, [docs, filter]);
+
+      const totalPages = useMemo(
+        () => docs.reduce((s, d) => s + (d.total_pages || d.totalPages || 0), 0), [docs]);
+
+      const readyCount = useMemo(
+        () => docs.filter(d => d.status === 'indexed').length, [docs]);
+
+      return (
+        <div
+          className="sidebar-rail"
+          data-state={expanded ? 'expanded' : 'collapsed'}
+          onMouseEnter={onEnter}
+          onMouseLeave={onLeave}
+        >
+          <aside className="sidebar-panel surface-blur flex flex-col">
+            {/* header / toggle */}
+            <div className="h-14 flex items-center shrink-0 px-3">
+              <button
+                className="nav-item shrink-0"
+                onClick={() => setPinned(p => !p)}
+                title={pinned ? '取消固定' : '固定展开'}
+              >
+                <span className="icon">{pinned ? I.panelL : I.menu}</span>
+              </button>
+              <div className="s-label ml-2 flex items-center gap-2 min-w-0 s-hide-collapsed">
+                <div className="w-7 h-7 r-sm flex items-center justify-center bg-accent-soft text-accent shrink-0">
+                  {I.sparkle}
+                </div>
+                <div className="min-w-0">
+                  <div className="t-14 font-semibold leading-tight truncate">PPT RAG</div>
+                  <div className="t-12 text-subtle leading-tight truncate">文档检索与问答</div>
+                </div>
+              </div>
+            </div>
+
+            {/* upload CTA — dashed ring + upload arrow */}
+            <div className="px-3 py-3 shrink-0">
+              <div
+                className={'upload-cta' + (docs.length === 0 ? ' pulse' : '')}
+                onClick={pickFiles}
+                title="上传 PPT / PPTX / PDF 文档"
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFiles(); } }}
+              >
+                <span className="cta-icon">{I.uploadTray}</span>
+                <span className="cta-text s-label">上传文档</span>
+              </div>
+              <input ref={fileRef} type="file" accept=".ppt,.pptx,.pdf"
+                     multiple className="hidden" onChange={onFiles} />
+              <div className="s-label t-12 text-subtle mt-2 text-center">
+                支持 PPT · PPTX · PDF · 多选
+              </div>
+              {uploading.length > 0 && (
+                <div className="s-label mt-2 space-y-1">
+                  {uploading.map((u, i) => (
+                    <div key={i} className="flex items-center gap-2 t-12 text-muted">
+                      {u.status === 'failed'
+                        ? <span className="text-danger">✕</span>
+                        : u.status === 'queued'
+                          ? <span className="text-success">{I.check}</span>
+                          : <span className="typing"><span/><span/><span/></span>}
+                      <span className="truncate flex-1">{u.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* collapsed-only quick info */}
+            <div className="s-only-collapsed py-3" style={{width:'100%',flexDirection:'column',alignItems:'center',gap:4}}>
+              <div title={`${docs.length} 文档`} style={{display:'flex',justifyContent:'center',width:'100%'}}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                     style={{color:'var(--fg-muted)'}}>
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                  <path d="M9 2h6v4H9z" />
+                </svg>
+              </div>
+              <div style={{textAlign:'center',width:'100%',fontSize:12,lineHeight:'16px',fontWeight:700,color:'var(--fg-muted)'}}>{docs.length}</div>
+            </div>
+
+            {/* expanded: stats */}
+            <div className="s-label px-3 pb-3 grid grid-cols-2 gap-2 shrink-0">
+              <div className="card px-3 py-2">
+                <div className="t-12 text-subtle">文档</div>
+                <div className="t-16 font-semibold mt-0.5">
+                  {docs.length}
+                  <span className="t-12 text-subtle font-normal"> · {readyCount} 就绪</span>
+                </div>
+              </div>
+              <div className="card px-3 py-2">
+                <div className="t-12 text-subtle">页数</div>
+                <div className="t-16 font-semibold mt-0.5">{totalPages}</div>
+              </div>
+            </div>
+
+            {/* search */}
+            <div className="s-label px-3 pb-2 shrink-0">
+              <input className="input h-9" placeholder="筛选文档…"
+                     value={filter} onChange={e => setFilter(e.target.value)} />
+            </div>
+
+            {/* list (only when expanded) */}
+            <div className="s-label flex-1 overflow-y-auto scroll-thin px-2 pb-3 min-h-0">
+              <div className="px-2 pb-1 flex items-center justify-between">
+                <div className="t-12 text-subtle uppercase tracking-wider">文档</div>
+                <button
+                  onClick={refresh} title="刷新"
+                  style={{background:'none',border:'none',cursor:'pointer',padding:2,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--fg-muted)',borderRadius:'var(--r-sm)'}}
+                  onMouseEnter={e => e.currentTarget.style.color='var(--fg)'}
+                  onMouseLeave={e => e.currentTarget.style.color='var(--fg-muted)'}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
+                    <path d="M21 3v5h-5" />
+                  </svg>
+                </button>
+              </div>
+              {filtered.length === 0 && (
+                <div className="px-2 py-6 text-center t-14 text-subtle">
+                  {docs.length === 0 ? '尚无文档，点击上传开始' : '无匹配结果'}
+                </div>
+              )}
+              <ul className="space-y-1">
+                {filtered.map(d => {
+                  const id = d.docId || d.doc_id;
+                  const pages = d.total_pages || d.totalPages || 0;
+                  return (
+                    <li key={id} className="card px-2.5 py-2 fade-up group">
+                      <div className="flex items-start gap-2">
+                        <div className="text-subtle mt-0.5">{I.doc}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="t-14 font-medium truncate" title={d.filename}>{d.filename}</div>
+                          <div className="t-12 text-subtle mt-0.5 flex items-center gap-1.5">
+                            <span>{pages || '—'} 页</span>
+                            <span>·</span>
+                            <StatusChip status={d.status} />
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn-ghost btn-danger h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="删除" onClick={() => onDelete(id)}>
+                          {I.trash}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            {/* footer: refresh icon when collapsed */}
+            <div className="s-only-collapsed mt-auto py-3">
+              <button className="nav-item w-full justify-center px-0" onClick={refresh} title="刷新">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
+                  <path d="M21 3v5h-5" />
+                </svg>
+              </button>
+            </div>
+          </aside>
+          <div className="sidebar-edge" />
+        </div>
+      );
+    }
+
+    /* ================== Source Card ================== */
+    function SourceCard({ ev, idx }) {
+      const [imgErr, setImgErr] = useState(false);
+      const docId = ev.docId || ev.doc_id || '';
+      const fileName = ev.fileName || ev.filename || docId;
+      const page  = ev.page;
+      const quote = (ev.quote || '').trim();
+      const url   = docId && page ? thumbUrl(docId, page) : '';
+
+      return (
+        <div className="card p-3 flex gap-3 fade-up" style={{animationDelay: `${idx*40}ms`}}>
+          <div className="shrink-0 w-24 h-16 r-sm overflow-hidden bg-soft border border-soft flex items-center justify-center">
+            {url && !imgErr
+              ? <img src={url} alt="" className="w-full h-full object-cover"
+                     onError={() => setImgErr(true)} />
+              : <span className="text-subtle">{I.doc}</span>}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="chip chip-info">第 {page} 页</span>
+              <span className="t-12 text-subtle truncate" title={fileName}>{fileName}</span>
+            </div>
+            {quote && <div className="t-12 text-muted mt-1 clamp-2">{quote}</div>}
+          </div>
+        </div>
+      );
+    }
+
+    /* PopSelect styles are in <style> block above */
+
+    /* ================== Chat ================== */
+    const QUESTION_TYPES = [
+      { v: 'open_ended',       label: '自由回答' },
+      { v: 'short_answer',     label: '简短回答' },
+      { v: 'single_choice',    label: '单项选择' },
+      { v: 'multiple_choice',  label: '多项选择' },
+      { v: 'true_false',       label: '是非判断' },
+    ];
+
+    const TOPK_OPTIONS = [
+      { v: 5,  label: '快速检索' },
+      { v: 10, label: '标准检索' },
+      { v: 15, label: '深度检索' },
+      { v: 20, label: '全面检索' },
+    ];
+
+    /* ── PopSelect: glass dropdown (方案 A) ── */
+    function PopSelect({ options, value, onChange }) {
+      const [open, setOpen] = useState(false);
+      const ref = useRef(null);
+      const selected = options.find(o => o.v === value) || options[0];
+
+      useEffect(() => {
+        if (!open) return;
+        const onDown = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        const onKey = e => { if (e.key === 'Escape') setOpen(false); };
+        document.addEventListener('pointerdown', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => { document.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey); };
+      }, [open]);
+
+      return (
+        <div ref={ref} style={{position:'relative'}}>
+          <button className={'ps-trigger' + (open ? ' open' : '')} onClick={() => setOpen(o => !o)}>
+            <span>{selected.label}</span>
+            <svg className="chevron" width="10" height="10" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {open && (
+            <div className="ps-dropdown">
+              {options.map(o => (
+                <div
+                  key={o.v}
+                  className={'ps-item' + (o.v === value ? ' selected' : '')}
+                  onClick={() => { onChange(o.v); setOpen(false); }}
+                >
+                  <span className="dot-check" />
+                  <span>{o.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function Chat({ docsReady }) {
+      const [messages, setMessages] = useState(() => ([
+        { role: 'system', t: '欢迎使用。已索引文档可直接提问；亦可上传新文档后再问。' }
+      ]));
+      const [q, setQ] = useState('');
+      const [qType, setQType] = useState('open_ended');
+      const [topK, setTopK] = useState(10);
+      const [busy, setBusy] = useState(false);
+      const scrollerRef = useRef(null);
+      const taRef = useRef(null);
+
+      const scrollToEnd = () => {
+        requestAnimationFrame(() => {
+          const el = scrollerRef.current;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      };
+
+      useEffect(scrollToEnd, [messages, busy]);
+
+      const autoresize = () => {
+        const el = taRef.current; if (!el) return;
+        el.style.height = '0px';
+        el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+      };
+      useEffect(autoresize, [q]);
+
+      const send = async () => {
+        const text = q.trim(); if (!text || busy) return;
+        setMessages(m => [...m, { role: 'user', t: text }]);
+        setQ(''); setBusy(true);
+        try {
+          const data = await queryAsk({ question: text, topK, questionType: qType });
+          setMessages(m => [...m, { role: 'assistant', ...data }]);
+        } catch (e) {
+          setMessages(m => [...m, { role: 'error', t: '查询失败：' + e.message }]);
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const onKey = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+      };
+
+      const samples = [
+        'FusionDirector 的故障诊断准确率是多少？',
+        '介绍一下 FusionCube 的整体架构。',
+        '比较不同型号的服务器规格差异。',
+      ];
+
+      return (
+        <main className="flex-1 flex flex-col h-full">
+          {/* messages */}
+          <div ref={scrollerRef} className="flex-1 overflow-y-auto scroll-thin">
+            <div className="max-w-2xl mx-auto px-6 py-12 space-y-8">
+              {messages.length === 1 && (
+                <div className="fade-up flex flex-col items-center text-center space-y-8">
+                  <div className="space-y-3">
+                    <h1 className="t-32">提出一个问题</h1>
+                    <p className="t-16 text-muted max-w-md mx-auto">
+                      基于已索引的 PPT/PDF 文档，给出严格依据原文的答案。
+                    </p>
+                  </div>
+                  <div className="w-full grid grid-cols-1 gap-3">
+                    {samples.map((s, i) => (
+                      <button key={i}
+                        onClick={() => setQ(s)}
+                        className="card text-left px-4 py-3 hover:translate-y-[-1px] transition-transform">
+                        <div className="t-14 text-fg">{s}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(() => {
+                const msgs = messages.slice(1);
+                const pairs = [];
+                for (let i = 0; i < msgs.length; i += 2) {
+                  pairs.push(msgs.slice(i, i + 2));
+                }
+                return pairs.map((pair, i) => (
+                  <div key={i} className="qa-group space-y-3">
+                    {pair.map((m, j) => <Message key={j} m={m} />)}
+                  </div>
+                ));
+              })()}
+
+              {busy && (
+                <div className="flex items-center gap-2 t-14 text-muted fade-up">
+                  <span className="typing"><span/><span/><span/></span> 检索与推理中…
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* composer */}
+          <div>
+            <div className="max-w-2xl mx-auto px-6 py-6">
+              <div className="card surface-strong composer-card p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <PopSelect options={QUESTION_TYPES} value={qType} onChange={setQType} />
+                  <PopSelect options={TOPK_OPTIONS} value={topK} onChange={setTopK} />
+                </div>
+                {/* composed input: textarea + button in one bordered container */}
+                <div className="relative" style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-md)',
+                  background: 'var(--surface)',
+                  transition: 'border-color .2s ease, box-shadow .2s ease',
+                }}>
+                  <textarea
+                    ref={taRef}
+                    value={q}
+                    onChange={e => setQ(e.target.value)}
+                    onKeyDown={onKey}
+                    rows={2}
+                    placeholder="提出关于已上传文档的问题…"
+                    className="resize-none"
+                    style={{
+                      width: '100%', minHeight: 64, maxHeight: 160,
+                      padding: '12px 56px 12px 14px',
+                      fontSize: '15px', lineHeight: '22px',
+                      border: 'none', outline: 'none',
+                      background: 'transparent',
+                      color: 'var(--fg)',
+                      fontFamily: 'inherit',
+                      borderRadius: 'var(--r-md)',
+                    }}
+                  />
+                  <button
+                    className="send-btn"
+                    style={{
+                      position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                      padding: 4,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: 'none',
+                      color: q.trim() && !busy ? 'var(--fg)' : 'var(--border)',
+                      border: 'none',
+                      cursor: q.trim() && !busy ? 'pointer' : 'default',
+                      transition: 'color .2s ease, transform .12s ease',
+                    }}
+                    disabled={!q.trim() || busy}
+                    onClick={send}
+                    onMouseEnter={e => { if (q.trim() && !busy) e.currentTarget.style.color = 'var(--fg)'; }}
+                    onMouseDown={e => { if (q.trim() && !busy) e.currentTarget.style.transform = 'translateY(-50%) scale(0.9)'; }}
+                    onMouseUp={e => { if (q.trim() && !busy) e.currentTarget.style.transform = 'translateY(-50%)'; }}
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14" /><path d="M12 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {!docsReady && (
+                <div className="t-12 text-warning mt-3 text-center">提示：当前没有处于「已就绪」的文档，回答可能为空。</div>
+              )}
+            </div>
+          </div>
+        </main>
+      );
+    }
+
+    function Message({ m }) {
+      if (m.role === 'user') {
+        return (
+          <div className="fade-up flex justify-end">
+            <div
+              className="r-lg px-4 py-3 max-w-[85%]"
+              style={{
+                background: 'color-mix(in oklab, var(--accent) 88%, transparent)',
+                backdropFilter: 'saturate(140%) blur(12px)',
+                WebkitBackdropFilter: 'saturate(140%) blur(12px)',
+                color: '#fff',
+                boxShadow: 'var(--shadow-1)',
+              }}
+            >
+              <div className="t-16 whitespace-pre-wrap">{m.t}</div>
+            </div>
+          </div>
+        );
+      }
+      if (m.role === 'error') {
+        return (
+          <div className="fade-up">
+            <div className="card p-4 border-app" style={{borderColor: 'var(--danger)'}}>
+              <div className="t-14 text-danger">{m.t}</div>
+            </div>
+          </div>
+        );
+      }
+      if (m.role === 'system') return null;
+
+      // assistant
+      const ev = (m.evidence || []).slice(0, 6);
+      const conf = typeof m.confidence === 'number' ? Math.round(m.confidence * 100) : null;
+      return (
+        <div className="fade-up space-y-3">
+          <div className="card p-5">
+            <div className="flex items-center gap-2 t-12 text-subtle mb-2">
+              <span className="dot" style={{background: 'var(--success)'}} />
+              基于 {ev.length} 条证据回答
+              {conf !== null && <><span>·</span><span>置信度 {conf}%</span></>}
+              {typeof m.latencyMs === 'number' && <><span>·</span><span>{m.latencyMs}ms</span></>}
+            </div>
+            <div className="t-16 whitespace-pre-wrap leading-relaxed">{m.answer || '（未找到相关信息）'}</div>
+          </div>
+          {ev.length > 0 && (
+            <div>
+              <div className="t-12 text-subtle uppercase tracking-wider px-1 mb-2">来源</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {ev.map((e, i) => <SourceCard key={i} ev={e} idx={i} />)}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ================== App ================== */
+    function BgFX() {
+      const ref = useRef(null);
+      useEffect(() => {
+        const el = ref.current; if (!el) return;
+        let raf = 0;
+        const onMove = (e) => {
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(() => {
+            el.style.setProperty('--mx', e.clientX + 'px');
+            el.style.setProperty('--my', e.clientY + 'px');
+          });
+        };
+        window.addEventListener('pointermove', onMove, { passive: true });
+        return () => { window.removeEventListener('pointermove', onMove); cancelAnimationFrame(raf); };
+      }, []);
+      return (
+        <div ref={ref} className="bg-fx" aria-hidden="true">
+          <div className="grid-base" />
+          <div className="grid-spot" />
+          <div className="orb orb-1" />
+          <div className="orb orb-2" />
+          <div className="orb orb-3" />
+        </div>
+      );
+    }
+
+    /* TopBar removed — theme toggle lives in sidebar footer */
+
+    function App() {
+      const [theme, toggleTheme] = useTheme();
+      const [docs, setDocs] = useState([]);
+      const [err, setErr] = useState(null);
+      const [uploading, setUploading] = useState(false);
+
+      const refresh = useCallback(async () => {
+        try {
+          const list = await listDocs();
+          // normalize keys
+          const norm = (Array.isArray(list) ? list : []).map(d => ({
+            ...d,
+            docId: d.docId || d.doc_id,
+            filename: d.filename || d.fileName || '(未命名)',
+            total_pages: d.total_pages ?? d.totalPages ?? 0,
+            status: d.status || 'pending',
+          }));
+          setDocs(norm);
+          setErr(null);
+        } catch (e) { setErr(e.message); }
+      }, []);
+
+      useEffect(() => { refresh(); }, [refresh]);
+
+      // poll while there are non-terminal statuses or while uploading
+      useEffect(() => {
+        const hasPending = uploading || docs.some(d => d.status === 'pending' || d.status === 'parsing');
+        if (!hasPending) return;
+        const t = setInterval(refresh, 2000);
+        return () => clearInterval(t);
+      }, [docs, uploading, refresh]);
+
+      const docsReady = docs.some(d => d.status === 'indexed');
+
+      return (
+        <div className="h-full flex flex-col app-shell">
+          <BgFX />
+          {err && (
+            <div className="px-6 py-2 t-12 text-danger surface-blur border-b border-app">
+              后端连接失败：{err} ｜ 请确认 <code className="font-mono">uvicorn backend.app:app --host 127.0.0.1 --port 8000</code> 已启动
+            </div>
+          )}
+          <div className="flex-1 flex min-h-0">
+            <DocPanel docs={docs} refresh={refresh} onUploadingChange={setUploading} />
+            <Chat docsReady={docsReady} />
+          </div>
+          {/* floating theme toggle — top-right corner */}
+          <div className="fixed top-4 right-4 z-50">
+            <div style={{background: 'color-mix(in oklab, var(--surface) 20%, transparent)', backdropFilter: 'blur(4px)', borderRadius: 'var(--r-md)', padding: 4}}>
+              <AnimatedThemeToggler isDark={theme === 'dark'} onToggle={toggleTheme} />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
